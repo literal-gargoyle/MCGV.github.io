@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft /give Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.8.0/jszip.min.js"></script>
+    <style>
+        #itemImage img {
+            transition: width 0.3s, height 0.3s;
+            /* Smooth transition for scaling */
+        }
+
+        #scaleSliderContainer {
+            display: none;
+            /* Hide scale slider initially */
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Minecraft /give Visualizer</h1>
+    <div>
+        <label for="texturePack">Upload Texture Pack (ZIP):</label>
+        <input type="file" id="texturePack" accept=".zip">
+    </div>
+    <a href="pack.zip" download> Download Vannila Texture Pack</a>
+    <div>
+        <label for="giveCommand">Enter /give Command:</label>
+        <input type="text" id="giveCommand" placeholder="/give @p diamond_sword 1 {\" ench\":\"real\"} 1">
+    </div>
+    <button id="parseButton">Parse Command</button>
+    <div id="output">
+        <h2>Parsed Command</h2>
+        <p><strong>Player:</strong> <span id="player"></span></p>
+        <p><strong>Item:</strong> <span id="item"></span></p>
+        <p><strong>Amount:</strong> <span id="amount"></span></p>
+        <p><strong>Data:</strong>
+        <pre id="data"></pre>
+        </p>
+        <div id="itemImage"></div>
+
+        <!-- Scale Slider -->
+        <div id="scaleSliderContainer">
+            <label for="scaleSlider">Image Size:</label>
+            <input type="range" id="scaleSlider" min="16" max="320" value="16">
+            <span id="scaleValue">160px</span>
+        </div>
+    </div>
+
+    <script>
+        const textureImages = {}; // Store loaded texture images
+        const svgImages = {}; // Store loaded SVG images
+        let texturePackLoaded = false; // Track whether the texture pack has been processed
+
+        document.getElementById('texturePack').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const zip = new JSZip();
+                    zip.loadAsync(e.target.result).then((zipContent) => {
+                        // Find all image files in the texture pack ZIP
+                        zipContent.folder("assets/minecraft/textures/item").forEach((relativePath, file) => {
+                            if (file.name.endsWith('.png')) {
+                                file.async("blob").then((blob) => {
+                                    const url = URL.createObjectURL(blob);
+                                    textureImages[file.name.replace("assets/minecraft/textures/item/", "")] = url;
+                                    // Convert PNG to SVG if possible (for this example, we assume SVGs exist)
+                                    const svgFilePath = file.name.replace(".png", ".svg");
+                                    svgImages[file.name.replace("assets/minecraft/textures/item/", "")] = svgFilePath;
+                                });
+                            }
+                        });
+                        texturePackLoaded = true; // Mark texture pack as loaded
+                        alert("Texture pack loaded successfully!");
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                // If no file is selected, load the default pack.zip
+                fetch('pack.zip')
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            const zip = new JSZip();
+                            zip.loadAsync(e.target.result).then((zipContent) => {
+                                // Find all image files in the texture pack ZIP
+                                zipContent.folder("assets/minecraft/textures/item").forEach((relativePath, file) => {
+                                    if (file.name.endsWith('.png')) {
+                                        file.async("blob").then((blob) => {
+                                            const url = URL.createObjectURL(blob);
+                                            textureImages[file.name.replace("assets/minecraft/textures/item/", "")] = url;
+                                            // Convert PNG to SVG if possible (for this example, we assume SVGs exist)
+                                            const svgFilePath = file.name.replace(".png", ".svg");
+                                            svgImages[file.name.replace("assets/minecraft/textures/item/", "")] = svgFilePath;
+                                        });
+                                    }
+                                });
+                                texturePackLoaded = true; // Mark texture pack as loaded
+                                alert("Default texture pack loaded!");
+                            });
+                        };
+                        reader.readAsArrayBuffer(blob);
+                    });
+            }
+        });
+
+        document.getElementById('parseButton').addEventListener('click', () => {
+            if (!texturePackLoaded) {
+                alert('Please upload or process a texture pack first.');
+                return;
+            }
+            parseCommand();
+        });
+
+        // Image size scaling logic
+        document.getElementById('scaleSlider').addEventListener('input', function () {
+            const scaleValue = this.value;
+            document.getElementById('scaleValue').textContent = `${scaleValue}px`;
+
+            // Update image size based on slider value
+            const imageElement = document.querySelector('#itemImage img');
+            if (imageElement) {
+                imageElement.style.width = `${scaleValue}px`;
+                imageElement.style.height = `${scaleValue}px`;
+            }
+        });
+
+        function parseCommand() {
+            const command = document.getElementById('giveCommand').value;
+            const regex = /\/give\s+(\S+)\s+(\S+)\s*(\d*)\s*(\{.*\})?/;
+            const match = command.match(regex);
+
+            if (match) {
+                const player = match[1];
+                const item = match[2];
+                const amount = match[3] || 1;
+                const data = match[4] ? JSON.parse(match[4]) : {};
+
+                document.getElementById('player').textContent = player;
+                document.getElementById('item').textContent = item;
+                document.getElementById('amount').textContent = amount;
+                document.getElementById('data').textContent = JSON.stringify(data, null, 2);
+
+                displayItemImage(item, data);
+            } else {
+                alert('Invalid /give command');
+            }
+        }
+
+        function displayItemImage(item, data) {
+            const itemImage = document.getElementById('itemImage');
+            itemImage.innerHTML = ''; // Clear previous image
+
+            const imageElement = document.createElement('img');
+            let itemImagePath = svgImages[`${item}.svg`] || textureImages[`${item}.png`]; // Check if SVG is available, fall back to PNG
+
+            if (itemImagePath) {
+                // Check if the file is an SVG or PNG
+                if (itemImagePath.endsWith('.svg')) {
+                    // If SVG, use inline SVG by fetching it
+                    fetch(itemImagePath)
+                        .then(response => response.text())
+                        .then(svg => {
+                            const svgContainer = document.createElement('div');
+                            svgContainer.innerHTML = svg;
+                            itemImage.appendChild(svgContainer.firstChild); // Append the SVG element
+                            setupScaleSlider(); // Show the slider once the image is processed
+                        });
+                } else {
+                    // If PNG, display as an image
+                    imageElement.src = itemImagePath;
+                    imageElement.alt = item;
+                    itemImage.appendChild(imageElement);
+                    setupScaleSlider(); // Show the slider once the image is processed
+                }
+            } else {
+                imageElement.src = "default_item_image.png"; // Fallback image
+                itemImage.appendChild(imageElement);
+                setupScaleSlider(); // Show the slider once the image is processed
+            }
+
+            // If the data includes enchantments, apply a glow effect
+            if (data && data.ench && data.ench.length > 0) {
+                if (imageElement) {
+                    imageElement.style.filter = 'drop-shadow(0 0 5px cyan)'; // Simple glint effect
+                }
+            }
+
+            // Set initial image size based on the slider value
+            const scaleValue = document.getElementById('scaleSlider').value;
+            if (imageElement) {
+                imageElement.style.width = `${scaleValue}px`;
+                imageElement.style.height = `${scaleValue}px`;
+            }
+        }
+
+        function setupScaleSlider() {
+            // Show the scale slider container after image is processed
+            document.getElementById('scaleSliderContainer').style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>
